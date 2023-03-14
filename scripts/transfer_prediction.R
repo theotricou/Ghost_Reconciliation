@@ -55,8 +55,8 @@ REC_ROB <- function(sim){
 
   # creates a dataset of transfer events status by reconciliation tools
   RES <-  as.data.frame(do.call("rbind", by(REC_tr, REC_tr$tool, function(x){
-    # transfers that matched both datasets were annotated as VP.
-    x[which(x$paste %in% SIM_tr_score$paste), "status"] <- "VP"
+    # transfers that matched both datasets were annotated as TP.
+    x[which(x$paste %in% SIM_tr_score$paste), "status"] <- "TP"
     # other transfers stay FN
     rest = SIM_tr_score[-which(SIM_tr_score$paste %in% x$paste),]
     # change "tool" to match current one
@@ -81,3 +81,5 @@ results <- as.data.frame(do.call("rbind",lapply(simulation_replicates, function(
 
 
 write.table(results, file = "RESULTS.txt", quote = F, row.names = F)
+
+# GNU Ghost

@@ -8,7 +8,9 @@ python3 ~/GitHub/Zombi/Zombi.py G GenomeParameters.tsv sim_$sim
 
 cd sim_$sim
 
-grep -P "\tT" G/Gene_families/* | awk '{print $1, $3}' | sed "s/.tsv.* / /g" | sed "s/;/ /g" | awk '{print $1, $2, $6}' | sed "s@.*/@@g" | sed 's/events/prunedtree/g' > Transfers.txt
+grep -P "\tT" G/Gene_families/* | awk '{print $1, $3}' |
+  sed "s/.tsv.* / /g" | sed "s/;/ /g" | awk '{print $1, $2, $6}' |
+  sed "s@.*/@@g" | sed 's/events/prunedtree/g' > Transfers.txt
 
 NUM=1
 while [ ! -f aletree ]; do
@@ -63,3 +65,5 @@ for i in *uTs; do
 done > Transfers_rec.txt
 
 python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings.py
+
+# GNU Ghost

@@ -1,0 +1,132 @@
+#! /usr/bin/env python
+# by Theo Tricou
+#
+import os
+import random
+
+# extinction = 0
+extant_species = [40, 100]
+sample_species = [20]
+transfer_rate = 1
+n_replicate = 10
+n_gene_tree = 1000
+
+workdir: "./"
+
+random.seed(42.666)
+seeds = random.sample(range(10**8,10**9), len(extant_species))
+
+#
+# rule all:
+#     message:
+#         """
+#             A rule to rule them all.
+#         """
+#     input:
+#         expand("Extant_{extant}/GenomeParameters.tsv",
+#             extant=extant_species),
+#         # expand("Extant_{extant}/File_{seed}", extant=extant_species, seed = seeds),
+#         # expand("Extant_{extant}/sim_{sample}", extant=extant_species, sample = range(1, n_replicate)),
+#
+#
+
+rep_dir = ["Extant_"+str(a) for a in extant_species]
+sim_dir = [x + "/sim_" + str(y) + "/T/CompleteTree.nwk" for x in rep_dir for y in list(range(0,n_replicate))]
+
+rule all:
+    input:
+        expand([x + "/sim_" + str(y) + "/T/CompleteTree.nwk" for x in rep_dir for y in list(range(0,n_replicate))]
+
+
+rule create_directory:
+    params:
+        Ext_dir = ["Extant_"+str(a) for a in extant_species]
+    shell:
+        """
+            mkdir -p {params.Ext_dir}
+
+        """
+
+rule create_paprams:
+    message:
+        """
+            Creates simulations directories with Zombi parameters files.
+        """
+    input:
+        # Spe_param_file = "SpeciesTreeParameters.tsv",
+        Gen_param_file = "GenomeParameters.tsv",
+    output:
+        Spe_param_file = ["Extant_"+str(a)+"/GenomeParameters.tsv" for a in extant_species],
+        # Gen_param_file = expand("Extant_{extant}/GenomeParameters.tsv",
+        #             extant=extant_species)
+    params:
+        Ext_dir = ["Extant_"+str(a) for a in extant_species],
+        gene_tree = n_gene_tree,
+        tr_rate = transfer_rate
+    shell:
+        """
+            cp {input.Spe_param_file} {params.Ext_dir}
+            # cp {input.Gen_param_file} {input.dir}/GenomeParameters.tsv
+
+            sed -i "s/NNNN/{wildcards.extant}/g;s/EEEE/0/g" {output.Spe_param_file}
+            # sed -i "s/TTTT/{params.tr_rate}/g;s/GGGG/{params.gene_tree}/g" {output.Gen_param_file}
+
+        """
+
+
+rule sim:
+    input:
+        Spe_param_file = rules.create_paprams.output.Spe_param_file,
+        # Gen_param_file = rules.create_paprams.output.Gen_param_file,
+        dir = rules.create_directory.output.Ext_dir
+    output:
+        sim = dynamic("{clusterid}/T/CompleteTree.nwk")
+    params:
+        rep = n_replicate
+    shell:
+        """
+            python3 ~/GitHub/Zombi/Zombi.py T {input.Spe_param_file} {input.dir}/sim_ {params.rep} 10 8
+        """
+
+
+# rule Simulator:
+#     message:
+#         """
+#             Simulates Species trees and Genes trees.
+#         """
+#     input:
+#         Spe_param_file = rules.create_paprams.output.Spe_param_file,
+#         Gen_param_file = rules.create_paprams.output.Gen_param_file,
+#         dir = rules.create_directory.output.Ext_dir
+#     output:
+#         seed_file = touch(expand("Extant_{extant}/File_{seed}", extant=extant_species, seed=seeds))
+#     params:
+#         sampled = sample_species,
+#         rep = n_replicate
+#     threads: 8
+#     shell:
+#         """
+#             python3 ~/GitHub/Zombi/Zombi.py T {input.Spe_param_file} {input.dir}/sim_ {params.rep} {wildcards.seed} {threads}
+#
+#             python3 ~/GitHub/Zombi/Zombi.py G {input.Gen_param_file} {input.dir}/sim_ {params.rep} {wildcards.seed} {threads}
+#
+#             python3 ~/GitHub/Zombi/SpeciesSampler.py n {params.sampled} {input.dir}/sim_ {params.rep} {wildcards.seed} {threads}
+#
+#         """
+
+# rule cat_sim_transfer:
+#     message:
+#         """
+#             Simulates Species trees and Genes trees.
+#         """
+#     input:
+#         dir = "Extant_{extant}/sim_{sample}"
+#     output:
+#         transfer_sim = touch("Extant_{extant}/sim_{sample}/Transfers.txt")
+#     shell:
+#         """
+#             grep -P "\tT" {input.dir}/G/Gene_families/* | awk '{print $1, $3}' |
+#                 sed "s/.tsv.* / /g" | sed "s/;/ /g" | awk '{print $1, $2, $6}' |
+#                 sed "s@.*/@@g" | sed 's/events/prunedtree/g' > {output.transfer_sim}
+#
+#         """
