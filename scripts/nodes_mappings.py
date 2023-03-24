@@ -8,7 +8,7 @@ from ete3 import Tree as tr
 # and the ALE tree with ale style node ID
 
 com = tr("T/CompleteTree.nwk", format = 1)
-ext = tr("T/ExtantTree.nwk", format = 1)
+ext = tr("SAMPLE_1/SampledSpeciesTree.nwk", format = 1)
 ale = tr("aletree", format = 1)
 
 # Creates a dictionary for ale and extant tree nodes mapping
@@ -50,8 +50,25 @@ for i in ext.iter_descendants():
             dict_map[cor_node.name] = [cor_node.name, i.name, i.name]
         cor_node = cor_node.up
 
-# Then all remaining extinct nodes
+
+ext_bl  = {}
+
+anc = com.search_nodes(name=ext.name)[0]
+extroot_to_comroot = anc.get_distance(com)
+ext_bl[com.name] = 0
+
 for i in com.iter_descendants():
+    # compute the length of branch that are contempory ghost to extant/sampled braches
+    anc = com.search_nodes(name=i.name)[0]
+    dist_to_root = anc.get_distance(com)
+    distup_to_root = anc.up.get_distance(com)
+    if dist_to_root > extroot_to_comroot and distup_to_root > extroot_to_comroot:
+        ext_bl[i.name] = round(anc.dist, 6)
+    elif dist_to_root > extroot_to_comroot and distup_to_root < extroot_to_comroot:
+        ext_bl[i.name] = round((dist_to_root - distup_to_root) - (extroot_to_comroot - distup_to_root), 6)
+    else:
+        ext_bl[i.name] = 0
+    # Then all remaining extinct nodes
     if not i.name in dict_map:
         node = i
         while not node.name in dict_map:
@@ -64,5 +81,16 @@ for i in sorted(dict_map.keys()):
     fout.write(" ".join([" ".join(dict_map[i]), dict_node[dict_map[i][1]]])+"\n")
 
 fout.close()
+
+
+for i in dict_node:
+    dict_node[i] = [dict_node[i], 0, 0]
+
+for i in dict_map:
+    dict_node[dict_map[i][1]][1] += ext_bl[dict_map[i][0]]
+    dict_node[dict_map[i][1]][2] += 1
+
+
+
 
 # GNU Ghost

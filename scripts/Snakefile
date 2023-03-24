@@ -5,128 +5,198 @@ import os
 import random
 
 # extinction = 0
-extant_species = [40, 100]
-sample_species = [20]
-transfer_rate = 1
-n_replicate = 10
-n_gene_tree = 1000
-
+extant_species = [100]
+sample_species = 20
+n_gene_tree = 1500
+n_simulation = 16
+transfer_rate = 0.025
+extinction_rate = 0
 workdir: "./"
 
-random.seed(42.666)
-seeds = random.sample(range(10**8,10**9), len(extant_species))
-
-#
-# rule all:
-#     message:
-#         """
-#             A rule to rule them all.
-#         """
-#     input:
-#         expand("Extant_{extant}/GenomeParameters.tsv",
-#             extant=extant_species),
-#         # expand("Extant_{extant}/File_{seed}", extant=extant_species, seed = seeds),
-#         # expand("Extant_{extant}/sim_{sample}", extant=extant_species, sample = range(1, n_replicate)),
-#
-#
-
-rep_dir = ["Extant_"+str(a) for a in extant_species]
-sim_dir = [x + "/sim_" + str(y) + "/T/CompleteTree.nwk" for x in rep_dir for y in list(range(0,n_replicate))]
 
 rule all:
-    input:
-        expand([x + "/sim_" + str(y) + "/T/CompleteTree.nwk" for x in rep_dir for y in list(range(0,n_replicate))]
-
-
-rule create_directory:
-    params:
-        Ext_dir = ["Extant_"+str(a) for a in extant_species]
-    shell:
-        """
-            mkdir -p {params.Ext_dir}
-
-        """
-
-rule create_paprams:
     message:
         """
-            Creates simulations directories with Zombi parameters files.
+            A rule to rule them all.
         """
     input:
-        # Spe_param_file = "SpeciesTreeParameters.tsv",
-        Gen_param_file = "GenomeParameters.tsv",
-    output:
-        Spe_param_file = ["Extant_"+str(a)+"/GenomeParameters.tsv" for a in extant_species],
-        # Gen_param_file = expand("Extant_{extant}/GenomeParameters.tsv",
-        #             extant=extant_species)
-    params:
-        Ext_dir = ["Extant_"+str(a) for a in extant_species],
-        gene_tree = n_gene_tree,
-        tr_rate = transfer_rate
-    shell:
-        """
-            cp {input.Spe_param_file} {params.Ext_dir}
-            # cp {input.Gen_param_file} {input.dir}/GenomeParameters.tsv
-
-            sed -i "s/NNNN/{wildcards.extant}/g;s/EEEE/0/g" {output.Spe_param_file}
-            # sed -i "s/TTTT/{params.tr_rate}/g;s/GGGG/{params.gene_tree}/g" {output.Gen_param_file}
-
-        """
+        map_sim = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_sim.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        ale_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
+        # ranger_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ranger.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
+        # notung_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.notung.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
 
 
-rule sim:
+
+SEED = 42 * transfer_rate * n_gene_tree * len(extant_species) + extinction_rate
+random.seed(SEED)
+seeds = random.sample(range(10**8,10**9), len(extant_species))
+seeder = {str(extant_species[i]): str(seeds[i]) for i in range(len(extant_species))}
+
+
+rule init_parameter:
     input:
-        Spe_param_file = rules.create_paprams.output.Spe_param_file,
-        # Gen_param_file = rules.create_paprams.output.Gen_param_file,
-        dir = rules.create_directory.output.Ext_dir
+        Spe = "SpeciesTreeParameters.tsv",
+        Gen = "GenomeParameters.tsv",
     output:
-        sim = dynamic("{clusterid}/T/CompleteTree.nwk")
+        Spe = "Extant_{extant}/SpeciesTreeParameters.tsv",
+        Gen = "Extant_{extant}/GenomeParameters.tsv",
     params:
-        rep = n_replicate
+        n_gene = n_gene_tree,
+        tr = transfer_rate,
+        extinction = extinction_rate,
     shell:
         """
-            python3 ~/GitHub/Zombi/Zombi.py T {input.Spe_param_file} {input.dir}/sim_ {params.rep} 10 8
+            mkdir -p Extant_{wildcards.extant}
+            cp {input.Spe} {output.Spe}
+            cp {input.Gen} {output.Gen}
+
+            sed -i "s/NNNN/{wildcards.extant}/g;s/EEEE/{params.extinction}/g" {output.Spe}
+            sed -i "s/TTTT/{params.tr}/g;s/GGGG/{params.n_gene}/g" {output.Gen}
+
         """
 
 
-# rule Simulator:
-#     message:
-#         """
-#             Simulates Species trees and Genes trees.
-#         """
+rule simulation:
+    input:
+        Spe = rules.init_parameter.output.Spe,
+        Gen = rules.init_parameter.output.Gen,
+    output:
+        directory("Extant_{extant}/sim_0/T"),
+    params:
+        n_sim = n_simulation,
+        seed = lambda w: seeder[w.extant],
+    threads: 8
+    shell:
+        """
+            python3 ~/GitHub/Zombi/Zombi.py T {input.Spe} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+
+            python3 ~/GitHub/Zombi/Zombi.py Gm {input.Gen} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+
+            python3 ~/GitHub/Zombi/SpeciesSampler.py n 20 Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+
+            touch Extant_{wildcards.extant}/{params.seed}
+        """
+
+rule stat_n_map:
+    input:
+      rules.simulation.output,
+    output:
+        tr_file = "Extant_{extant}/sim_{sim}/Transfers_sim.txt",
+        map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_sim.txt",
+        stat_file = "Extant_{extant}/sim_{sim}/Stats_simulation.txt",
+    shell:
+        """
+            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+            grep -P "\tT" G/Gene_families/* | awk '{{print $1, $3}}' |
+              sed "s/.tsv.* / /g" | sed "s/;/ /g" | awk '{{print $1, $2, $6}}' |
+              sed "s@.*/@@g" | sed 's/events/prunedtree/g' > Transfers_sim.txt
+
+            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_sim.py
+
+        """
+
+rule aletree_rec:
+    input:
+        rules.simulation.output,
+        rules.stat_n_map.output.map_file,
+    output:
+        aletree = "Extant_{extant}/sim_{sim}/aletree",
+    shell:
+        """
+            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+
+            ALEobserve SAMPLE_1/SampledSpeciesTree.nwk
+            ALEml_undated SAMPLE_1/SampledSpeciesTree.nwk SAMPLE_1/SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
+            mv SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.spTree aletree
+            rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale*
+
+        """
+
+rule rec_ale:
+    input:
+        rules.aletree_rec.output.aletree,
+    output:
+        rec_file = "Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs",
+    shell:
+        """
+            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+            ALEobserve SAMPLE_1/{wildcards.gene}_sampledtree.nwk
+            ALEml_undated aletree SAMPLE_1/{wildcards.gene}_sampledtree.nwk.ale
+            sed -i 's/([^)]*)//g' aletree_{wildcards.gene}_sampledtree.nwk.ale.uTs
+            sed -i '1d' aletree_{wildcards.gene}_sampledtree.nwk.ale.uTs
+            rm SAMPLE_1/{wildcards.gene}_sampledtree.nwk.ale
+
+        """
+
+rule ale_map:
+    input:
+        expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
+    output:
+        map_ale = "Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt",
+    shell:
+        """
+            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+
+            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_ale.py
+
+        """
+
+#
+# rule rec_ranger:
 #     input:
-#         Spe_param_file = rules.create_paprams.output.Spe_param_file,
-#         Gen_param_file = rules.create_paprams.output.Gen_param_file,
-#         dir = rules.create_directory.output.Ext_dir
+#         rules.aletree_rec.output.aletree,
 #     output:
-#         seed_file = touch(expand("Extant_{extant}/File_{seed}", extant=extant_species, seed=seeds))
-#     params:
-#         sampled = sample_species,
-#         rep = n_replicate
-#     threads: 8
+#         rec_file = "Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ranger.uTs",
 #     shell:
 #         """
-#             python3 ~/GitHub/Zombi/Zombi.py T {input.Spe_param_file} {input.dir}/sim_ {params.rep} {wildcards.seed} {threads}
-#
-#             python3 ~/GitHub/Zombi/Zombi.py G {input.Gen_param_file} {input.dir}/sim_ {params.rep} {wildcards.seed} {threads}
-#
-#             python3 ~/GitHub/Zombi/SpeciesSampler.py n {params.sampled} {input.dir}/sim_ {params.rep} {wildcards.seed} {threads}
+#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+#             cat aletree SAMPLE_1/{wildcards.gene}_sampledtree.nwk > {wildcards.gene}_sampledtree.nwk_ranger_input
+#             ~/Downloads/9_Tools/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i {wildcards.gene}_sampledtree.nwk_ranger_input -o {wildcards.gene}_sampledtree.nwk_ranger_output
+#             grep "Transfer," {wildcards.gene}_sampledtree.nwk_ranger_output | awk '{{print $8, $11}}' | sed "s/,//g" | sed "s/$/ 1/g" > aletree_{wildcards.gene}_sampledtree.nwk.ranger.uTs || true
+#             rm {wildcards.gene}_sampledtree.nwk_ranger_*
 #
 #         """
 
-# rule cat_sim_transfer:
-#     message:
-#         """
-#             Simulates Species trees and Genes trees.
-#         """
+# rule rec_notung:
 #     input:
-#         dir = "Extant_{extant}/sim_{sample}"
+#       rules.aletree_rec.output.aletree,
 #     output:
-#         transfer_sim = touch("Extant_{extant}/sim_{sample}/Transfers.txt")
+#         rec_file = "Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.notung.uTs",
 #     shell:
 #         """
-#             grep -P "\tT" {input.dir}/G/Gene_families/* | awk '{print $1, $3}' |
-#                 sed "s/.tsv.* / /g" | sed "s/;/ /g" | awk '{print $1, $2, $6}' |
-#                 sed "s@.*/@@g" | sed 's/events/prunedtree/g' > {output.transfer_sim}
+#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+#             java -jar ~/Downloads/9_Tools/Notung-2.9.1.5/Notung-2.9.1.5.jar --reconcile -g SAMPLE_1/{wildcards.gene}_sampledtree.nwk -s aletree --bootstraps name --infertransfers true --multsols 1 --parsable
+#             grep "#T" {wildcards.gene}_sampledtree.nwk.reconciled.0.parsable.txt | awk '{{print $4,$5}}' | grep -o "[0-9].*" | sed "s/$/ 1/g" > aletree_{wildcards.gene}_sampledtree.nwk.notung.uTs || true
+#             rm {wildcards.gene}_sampledtree.nwk.reconciled*
 #
 #         """
+
+# rule cat_and_cut:
+#     input:
+#       rules.aletree_rec.output.aletree,
+#       expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.{tool}.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1)), tool = ["ale"]),
+#     output:
+#         map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt",
+#         zip_dir =  "Extant_{extant}/sim_{sim}/G_and_Sample.tar.xz",
+#     shell:
+#         """
+#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+#             find . -type f -empty -print -delete
+#
+#             for i in *uTs; do
+#               ngene=`cut -d'.' -f 1 <<< $i`
+#               rec=`cut -d'.' -f 3 <<< $i`
+#               sed "s/^/$ngene $rec /g" $i
+#             done > Transfers_rec.txt
+#
+#             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_ale.py
+#
+#             tar -cf - G/ SAMPLE_1 | xz -9ze -T0 > G_and_Sample.tar.xz
+#             rm -rf  G/ SAMPLE_1
+#         """
+#
+
+
+
+# GNU Ghost
