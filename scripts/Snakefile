@@ -7,8 +7,8 @@ import random
 # extinction = 0
 extant_species = [100]
 sample_species = 20
-n_gene_tree = 1500
-n_simulation = 16
+n_gene_tree = 500
+n_simulation = 100
 transfer_rate = 0.025
 extinction_rate = 0
 workdir: "./"
@@ -22,7 +22,10 @@ rule all:
     input:
         map_sim = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_sim.txt", extant = extant_species, sim  = list(range(n_simulation))),
         map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        ale_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
+        map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        # rec_file = expand("Extant_{extant}/sim_{sim}/aletree_1500_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation))),
+        # ale_file = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
         # ranger_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ranger.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
         # notung_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.notung.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
 
@@ -115,88 +118,82 @@ rule aletree_rec:
 
 rule rec_ale:
     input:
-        rules.aletree_rec.output.aletree,
-    output:
-        rec_file = "Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs",
-    shell:
-        """
-            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-            ALEobserve SAMPLE_1/{wildcards.gene}_sampledtree.nwk
-            ALEml_undated aletree SAMPLE_1/{wildcards.gene}_sampledtree.nwk.ale
-            sed -i 's/([^)]*)//g' aletree_{wildcards.gene}_sampledtree.nwk.ale.uTs
-            sed -i '1d' aletree_{wildcards.gene}_sampledtree.nwk.ale.uTs
-            rm SAMPLE_1/{wildcards.gene}_sampledtree.nwk.ale
-
-        """
-
-rule ale_map:
-    input:
-        expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
+        rules.aletree_rec.output,
     output:
         map_ale = "Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt",
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
 
-            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_ale.py
+            for ale in SAMPLE_1/*_sampledtree.nwk; do
+                name=${{ale/SAMPLE_1\/}}
+                if [ ! -f aletree_$name.ale.uTs ]; then
+
+                    ALEobserve $ale
+                    ALEml_undated aletree $ale.ale
+                    sed -i 's/([^)]*)//g' aletree_$name.ale.uTs
+                    sed -i '1d' aletree_$name.ale.uTs
+                    rm $ale.ale
+
+                fi
+            done
+
+            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ale
 
         """
 
-#
-# rule rec_ranger:
-#     input:
-#         rules.aletree_rec.output.aletree,
-#     output:
-#         rec_file = "Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ranger.uTs",
-#     shell:
-#         """
-#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-#             cat aletree SAMPLE_1/{wildcards.gene}_sampledtree.nwk > {wildcards.gene}_sampledtree.nwk_ranger_input
-#             ~/Downloads/9_Tools/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i {wildcards.gene}_sampledtree.nwk_ranger_input -o {wildcards.gene}_sampledtree.nwk_ranger_output
-#             grep "Transfer," {wildcards.gene}_sampledtree.nwk_ranger_output | awk '{{print $8, $11}}' | sed "s/,//g" | sed "s/$/ 1/g" > aletree_{wildcards.gene}_sampledtree.nwk.ranger.uTs || true
-#             rm {wildcards.gene}_sampledtree.nwk_ranger_*
-#
-#         """
 
-# rule rec_notung:
-#     input:
-#       rules.aletree_rec.output.aletree,
-#     output:
-#         rec_file = "Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.notung.uTs",
-#     shell:
-#         """
-#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-#             java -jar ~/Downloads/9_Tools/Notung-2.9.1.5/Notung-2.9.1.5.jar --reconcile -g SAMPLE_1/{wildcards.gene}_sampledtree.nwk -s aletree --bootstraps name --infertransfers true --multsols 1 --parsable
-#             grep "#T" {wildcards.gene}_sampledtree.nwk.reconciled.0.parsable.txt | awk '{{print $4,$5}}' | grep -o "[0-9].*" | sed "s/$/ 1/g" > aletree_{wildcards.gene}_sampledtree.nwk.notung.uTs || true
-#             rm {wildcards.gene}_sampledtree.nwk.reconciled*
-#
-#         """
+rule rec_ranger:
+    input:
+        rules.aletree_rec.output,
+    output:
+        map_ranger = "Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt",
+    # retries: 10
+    shell:
+        """
+            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
 
-# rule cat_and_cut:
-#     input:
-#       rules.aletree_rec.output.aletree,
-#       expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.{tool}.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1)), tool = ["ale"]),
-#     output:
-#         map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt",
-#         zip_dir =  "Extant_{extant}/sim_{sim}/G_and_Sample.tar.xz",
-#     shell:
-#         """
-#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-#             find . -type f -empty -print -delete
-#
-#             for i in *uTs; do
-#               ngene=`cut -d'.' -f 1 <<< $i`
-#               rec=`cut -d'.' -f 3 <<< $i`
-#               sed "s/^/$ngene $rec /g" $i
-#             done > Transfers_rec.txt
-#
-#             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_ale.py
-#
-#             tar -cf - G/ SAMPLE_1 | xz -9ze -T0 > G_and_Sample.tar.xz
-#             rm -rf  G/ SAMPLE_1
-#         """
-#
+            for ranger in SAMPLE_1/*_sampledtree.nwk; do
+                name=${{ranger/SAMPLE_1\/}}
+                while [ ! -f aletree_$name.ranger.uTs ]; do
 
+                    cat aletree $ranger > ${{name}}_ranger_input
+                    ~/Downloads/9_Tools/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{name}}_ranger_input -o ${{name}}_ranger_output || true
+                    grep "Transfer," ${{name}}_ranger_output | awk '{{print $8, $11}}' | sed "s/,//g" | sed "s/$/ 1/g" > aletree_${{name}}.ranger.uTs || true
+                    rm ${{name}}_ranger_*
+
+                done
+            done
+
+            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ranger
+
+        """
+
+
+rule rec_notung:
+    input:
+        rules.aletree_rec.output,
+    output:
+        map_ranger = "Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt",
+    # retries: 10
+    shell:
+        """
+            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+
+            for notung in SAMPLE_1/*_sampledtree.nwk; do
+                name=${{notung/SAMPLE_1\/}}
+                while [ ! -f aletree_$name.notung.uTs ]; do
+
+                    java -jar ~/Downloads/9_Tools/Notung-2.9.1.5/Notung-2.9.1.5.jar --reconcile -g $notung -s aletree --bootstraps name --infertransfers true --multsols 1 --parsable || true
+                    grep "#T" ${{name}}.reconciled.0.parsable.txt | awk '{{print $4,$5}}' | grep -o "[0-9].*" | sed "s/$/ 1/g" > aletree_${{name}}.notung.uTs || true
+                    rm ${{name}}.reconciled*
+
+                done
+            done
+
+            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py notung
+
+        """
 
 
 # GNU Ghost
