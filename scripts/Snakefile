@@ -22,12 +22,8 @@ rule all:
     input:
         map_sim = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_sim.txt", extant = extant_species, sim  = list(range(n_simulation))),
         map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        # rec_file = expand("Extant_{extant}/sim_{sim}/aletree_1500_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation))),
-        # ale_file = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ale.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
-        # ranger_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.ranger.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
-        # notung_rec = expand("Extant_{extant}/sim_{sim}/aletree_{gene}_sampledtree.nwk.notung.uTs", extant = extant_species, sim  = list(range(n_simulation)), gene  = list(range(1,n_gene_tree+1))),
+        # map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        # map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
 
 
 
@@ -72,11 +68,11 @@ rule simulation:
     threads: 8
     shell:
         """
-            python3 ~/GitHub/Zombi/Zombi.py T {input.Spe} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 ~/GitHub/Zombi_Horde/Zombi.py T {input.Spe} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
-            python3 ~/GitHub/Zombi/Zombi.py Gm {input.Gen} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 ~/GitHub/Zombi_Horde/Zombi.py Gm {input.Gen} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
-            python3 ~/GitHub/Zombi/SpeciesSampler.py n 20 Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py n 20 Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
             touch Extant_{wildcards.extant}/{params.seed}
         """
