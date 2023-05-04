@@ -7,9 +7,10 @@ import random
 # extinction = 0
 extant_species = [100]
 sample_species = 20
-n_gene_tree = 500
-n_simulation = 100
-transfer_rate = 0.025
+n_gene_tree = 200
+n_simulation = 8
+# transfer_rate = 0.025
+transfer_rate = 0.1
 extinction_rate = 0
 workdir: "./"
 
@@ -20,8 +21,10 @@ rule all:
             A rule to rule them all.
         """
     input:
-        map_sim = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_sim.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        map_sim_c = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_Cluster_sim.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        aletree = expand("Extant_{extant}/sim_{sim}/aletree_Sample_Random", extant = extant_species, sim  = list(range(n_simulation))),
+
+        # map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
 
@@ -35,8 +38,8 @@ seeder = {str(extant_species[i]): str(seeds[i]) for i in range(len(extant_specie
 
 rule init_parameter:
     input:
-        Spe = "SpeciesTreeParameters.tsv",
-        Gen = "GenomeParameters.tsv",
+        Spe = "/home/theo/GitHub/Zombi_Horde/SpeciesTreeParameters.tsv",
+        Gen = "/home/theo/GitHub/Zombi_Horde/GenomeParameters.tsv",
     output:
         Spe = "Extant_{extant}/SpeciesTreeParameters.tsv",
         Gen = "Extant_{extant}/GenomeParameters.tsv",
@@ -82,14 +85,32 @@ rule stat_n_map:
       rules.simulation.output,
     output:
         tr_file = "Extant_{extant}/sim_{sim}/Transfers_sim.txt",
-        map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_sim.txt",
-        stat_file = "Extant_{extant}/sim_{sim}/Stats_simulation.txt",
+        map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_Cluster_sim.txt",
+        stat_file = "Extant_{extant}/sim_{sim}/Stats_simulation_Random.txt",
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-            grep -P "\tT" G/Gene_families/* | awk '{{print $1, $3}}' |
-              sed "s/.tsv.* / /g" | sed "s/;/ /g" | awk '{{print $1, $2, $6}}' |
-              sed "s@.*/@@g" | sed 's/events/prunedtree/g' > Transfers_sim.txt
+
+            python3 /home/theo/GitHub/Treemmer/Treemmer_v0.3.py T/ExtantTree.nwk -X 20 -v 0
+            cp T/ExtantTree.nwk_trimmed_list_X* diversity_sample
+            mv SAMPLE_1/ Sample_Random
+            Rscript /home/theo/GitHub/Ghost_Reconciliation/scripts/cluster_sampler.R
+
+            cd ..
+
+            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py i sim_{wildcards.sim}/diversity_sample sim_{wildcards.sim} 0 666 1
+            mv sim_{wildcards.sim}/SAMPLE_1/ sim_{wildcards.sim}/Sample_Diversity
+
+            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py i sim_{wildcards.sim}/cluster_sample sim_{wildcards.sim} 0 666 1
+            mv sim_{wildcards.sim}/SAMPLE_1/ sim_{wildcards.sim}/Sample_Cluster
+
+
+            cd sim_{wildcards.sim}
+
+            grep -P "\tT\t" G/Gene_families/* | awk '{{print $1, $3}}' | sed "s/[:;]/ /g" |
+                awk '{{print $1, $2, $5, $7}}' | sed "s@.*/@@g" |
+                sed 's/_events.tsv//g' > Transfers_sim.txt
+
 
             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_sim.py
 
@@ -100,15 +121,17 @@ rule aletree_rec:
         rules.simulation.output,
         rules.stat_n_map.output.map_file,
     output:
-        aletree = "Extant_{extant}/sim_{sim}/aletree",
+        aletree = "Extant_{extant}/sim_{sim}/aletree_Sample_Random",
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-
-            ALEobserve SAMPLE_1/SampledSpeciesTree.nwk
-            ALEml_undated SAMPLE_1/SampledSpeciesTree.nwk SAMPLE_1/SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
-            mv SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.spTree aletree
-            rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale*
+            for i in Sample_*; do
+                ALEobserve $i/SampledSpeciesTree.nwk
+                ALEml_undated $i/SampledSpeciesTree.nwk $i/SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
+                mv *spTree aletree_$i
+                rm $i/SampledSpeciesTree.nwk.ale
+            done
+            rm *nwk.ale*
 
         """
 
