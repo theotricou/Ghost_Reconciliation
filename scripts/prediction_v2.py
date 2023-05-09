@@ -126,22 +126,27 @@ def get_prediction_D(dd, detach_tree, tr_prediction, samp, speciation):
             D_node = detach_tree.search_nodes(name = node_no_tr[0])[0]
         elif len(node_no_tr) > 1:
             D_node = D_node.get_common_ancestor(list(set(leaf_in_D_node) - set(leaves_in_nodes_recip)))
-        return(D_node.name.split("_"))
+        if D_node.name.split("_")[0] not in [i.name for i in samp.traverse()]:
+            D_node = com.search_nodes(name = D_node.name.split("_")[0])[0]
+            prediction = com.search_nodes(name = get_ghost_prediction(D_node, back_bone_nodes, bak_bone_tree))[0]
+            return([prediction.name, "X"])
+        else:
+            return(D_node.name.split("_"))
 
 
 def complete_prediction(gene, dir, back_bone_nodes, samp):
     num = gene.split("/")[1].split("_")[0]
     tr_data = pd.read_csv("G/Gene_families/" + num + "_events.tsv", sep="\t")
-    speciation = tr_data.loc[tr_data["EVENT"] == "S"]
+    speciation = tr_data.loc[tr_data["EVENT"] == "S"].copy()
     speciation[["up", "up_id", "c1", "c1_id", "c2", "c2_id"]] = speciation["NODES"].apply(lambda x: pd.Series(x.split(";")))
     tr_data = tr_data[tr_data["EVENT"] == "T"]
-    # if tr_data.empty:
-    #     return
+    if tr_data.empty:
+        return
     tr_data[["from", "from_id", "from_d", "from_d_id", "to", "to_id"]] = tr_data["NODES"].apply(lambda x: pd.Series(x.split(";")))
     # tr_data = tr_data.drop(columns = "NODES")
     tr_prediction = tr_data.loc[tr_data.to.isin(back_bone_nodes)].copy()
-    # if tr_prediction.empty:
-    #     return
+    if tr_prediction.empty:
+        return
     # read genes trees
     t_gene_p = tr('G/Gene_trees/' + num + '_completetree.nwk',format = 1)
     t_gene_s = tr(gene ,format = 1)
@@ -176,17 +181,58 @@ def complete_prediction(gene, dir, back_bone_nodes, samp):
     tr_prediction = tr_prediction[tr_prediction.sister]
     if tr_prediction.empty:
         return
+    tr_prediction["Gene"] = gene.split("/")[1].split("_")[0]
+    tr_prediction = tr_prediction.drop(columns=["EVENT", "NODES", "sister"])
     name_out = gene.split(".")[0]
     tr_prediction.to_csv(name_out + "_prediction", sep=' ', index = False)
     return(tr_prediction)
 
+def is_to_strict_descendant(name_from ,name_to, tree):
+    n_from = tree.search_nodes(name = name_from)[0]
+    n_to = tree.search_nodes(name = name_to)[0]
+    if n_to in n_from.get_descendants():
+        return(True)
+    else:
+        return(False)
+
+def is_to_time_descendant(name_from ,name_to, tree):
+    n_from = tree.search_nodes(name = name_from)[0]
+    n_to = tree.search_nodes(name = name_to)[0].up
+    if n_from.get_distance(samp) >= n_to.get_distance(samp):
+        return(False)
+    elif n_from.get_distance(samp) <= n_to.get_distance(samp):
+        return(True)
+    else:
+        return("ERROR")
+
+def get_ghost_prediction(com_node, back_bone_nodes, bak_bone_tree):
+    # com_node = com.search_nodes(name = node.name)[0]
+    while com_node.name not in back_bone_nodes:
+        com_node = com_node.up
+    ext_node = bak_bone_tree.search_nodes(name = com_node.name)[0]
+    while len(ext_node.get_children()) not in [0,2]:
+        ext_node = ext_node.get_children()[0]
+    return(ext_node.name)
+
+def get_ghost_banch_length(node, nodes_contemporary, com):
+    if node.name in nodes_contemporary:
+        return(node.dist)
+    else:
+        dist_to_root = node.get_distance(com)
+        distup_to_root = node.up.get_distance(com)
+        if dist_to_root > extroot_to_comroot and distup_to_root > extroot_to_comroot:
+            ext_bl = round(node.dist, 6)
+        elif dist_to_root > extroot_to_comroot and distup_to_root < extroot_to_comroot:
+            ext_bl = round((dist_to_root - distup_to_root) - (extroot_to_comroot - distup_to_root), 6)
+        else:
+            ext_bl = 0
+        return(ext_bl)
 
 
 # loop for sample start here (and gene ?)
 com = tr("T/CompleteTree.nwk",format = 1)
 
 dirs = glob.glob("Sampl*")
-
 for dir in dirs:
     samp_path = os.path.join(dir, "SampledSpeciesTree.nwk")
     samp = tr(samp_path,format = 1)
@@ -197,28 +243,47 @@ for dir in dirs:
             back_bone_nodes.append(node.name)
             node = node.up
     back_bone_nodes = list(set(back_bone_nodes))
+    bak_bone_tree = com.copy()
+    bak_bone_tree.prune(list(set(back_bone_nodes)))
     genes = glob.glob(dir + "/*_sampledtree.nwk")
     all_prediction = []
     for gene in genes:
         print(gene)
         all_prediction.append(complete_prediction(gene, dir, back_bone_nodes, samp))
+    full_prediction = pd.concat(all_prediction, ignore_index=True)
+    full_prediction["to_direct_descendant"] = full_prediction.apply(lambda x: is_to_strict_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
+    full_prediction["to_descendant"] = full_prediction.apply(lambda x: is_to_time_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
+    samp.dist = 0
+    res_df = pd.DataFrame()
+    res_df["Node"] = [i.name for i in samp.traverse()]
+    res_df["br_length"] = res_df.apply(lambda x: samp.search_nodes(name = x["Node"])[0].dist, axis = 1)
+    res_df["dist_to_root"] = res_df.apply(lambda x: round(samp.search_nodes(name = x["Node"])[0].get_distance(samp),6), axis = 1)
+    res_df["N_transfers_donor"] = res_df.apply(lambda x: full_prediction.loc[full_prediction["from_prediction"] == x["Node"]].shape[0], axis = 1)
+    res_df["N_transfers_recip"] = res_df.apply(lambda x: full_prediction.loc[full_prediction["to_prediction"] == x["Node"]].shape[0], axis = 1)
+    res_df["to_direct_descendant"] = res_df.apply(lambda x: full_prediction.loc[(full_prediction.from_prediction == x["Node"]) & (full_prediction.to_direct_descendant)].shape[0], axis = 1)
+    res_df["to_descendant"] = res_df.apply(lambda x: full_prediction.loc[(full_prediction.from_prediction == x["Node"]) & (full_prediction.to_descendant)].shape[0], axis = 1)
+    anc = com.search_nodes(name=samp.name)[0]
+    extroot_to_comroot = anc.get_distance(com)
+    nodes_contemporary = [node.name for node in anc.iter_descendants()]
+    stat_by_node = dict()
+    for i in com.traverse():
+        prediction = get_ghost_prediction(i, back_bone_nodes, bak_bone_tree)
+        if not i.is_root():
+            i.add_features(ghost_prediction = prediction, ghost_dist = get_ghost_banch_length(i, nodes_contemporary, com))
+        else:
+            i.add_features(ghost_prediction = prediction, ghost_dist = 0)
+        if prediction in stat_by_node:
+            if i.name not in bak_bone_tree:
+                stat_by_node[prediction][0] += 1
+                stat_by_node[prediction][1] += i.ghost_dist
+        else:
+            stat_by_node[prediction] = [0, 0]
+    res_df["N_ghost_node"] = res_df.apply(lambda x: stat_by_node[x["Node"]][0], axis = 1)
+    res_df["L_ghost_branch"] = res_df.apply(lambda x: round(stat_by_node[x["Node"]][1],6), axis = 1)
+    res_df.to_csv("Stats_simulation_" + dir + "_V2.txt", sep=' ', index = False)
+    full_prediction.to_csv("Trans" + dir + "_V2.txt", sep=' ', index = False)
 
-full_prediction = pd.concat(all_prediction, ignore_index=True)
-
-def is_to_a_descendant(name_from ,name_to, tree):
-    n_from = tree.search_nodes(name = name_from)[0]
-    n_to = tree.search_nodes(name = name_to)[0]
-    if n_to in n_from.get_descendants():
-        return(True)
-    else:
-        return(False)
 
 
-full_prediction["to_des"] = full_prediction.apply(lambda x: is_to_a_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
 
-full_prediction
-samp.dist = 0
-all_stat = dict()
-for i in samp.traverse():
-
-    all_stat[i.name] = [i.dist, samp.get_distance(i), ]
+# GNU Ghost

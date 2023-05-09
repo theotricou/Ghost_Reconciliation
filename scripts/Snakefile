@@ -5,9 +5,9 @@ import os
 import random
 
 # extinction = 0
-extant_species = [100]
-sample_species = 20
-n_gene_tree = 200
+extant_species = [200]
+sample_species = 40
+n_gene_tree = 20
 n_simulation = 8
 # transfer_rate = 0.025
 transfer_rate = 0.1
@@ -15,16 +15,20 @@ extinction_rate = 0
 workdir: "./"
 
 
+
+# To run
+#
+# snakemake --snakefile ~/GitHub/Ghost_Reconciliation/scripts/Snakefile -T 10 --cores 8 -n
+
 rule all:
     message:
         """
             A rule to rule them all.
         """
     input:
-        map_sim_c = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_Cluster_sim.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        prediction = expand("Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Random_V2.txt", extant = extant_species, sim  = list(range(n_simulation))),
         aletree = expand("Extant_{extant}/sim_{sim}/aletree_Sample_Random", extant = extant_species, sim  = list(range(n_simulation))),
-
-        # map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
 
@@ -68,6 +72,7 @@ rule simulation:
     params:
         n_sim = n_simulation,
         seed = lambda w: seeder[w.extant],
+        n_samp = sample_species,
     threads: 8
     shell:
         """
@@ -75,7 +80,7 @@ rule simulation:
 
             python3 ~/GitHub/Zombi_Horde/Zombi.py Gm {input.Gen} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
-            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py n 20 Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py n {params.n_samp} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
             touch Extant_{wildcards.extant}/{params.seed}
         """
@@ -85,16 +90,20 @@ rule stat_n_map:
       rules.simulation.output,
     output:
         tr_file = "Extant_{extant}/sim_{sim}/Transfers_sim.txt",
-        map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_Cluster_sim.txt",
-        stat_file = "Extant_{extant}/sim_{sim}/Stats_simulation_Random.txt",
+        # map_file = "Extant_{extant}/sim_{sim}/Nodes_mapping_Cluster_sim.txt",
+        stat_fileR = "Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Random_V2.txt",
+        stat_fileC = "Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Cluster_V2.txt",
+        stat_fileD = "Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Diversity_V2.txt",
+    params:
+        n_samp = sample_species,
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
 
-            python3 /home/theo/GitHub/Treemmer/Treemmer_v0.3.py T/ExtantTree.nwk -X 20 -v 0
+            python3 /home/theo/GitHub/Treemmer/Treemmer_v0.3.py T/ExtantTree.nwk -X {params.n_samp} -v 0
             cp T/ExtantTree.nwk_trimmed_list_X* diversity_sample
             mv SAMPLE_1/ Sample_Random
-            Rscript /home/theo/GitHub/Ghost_Reconciliation/scripts/cluster_sampler.R
+            Rscript /home/theo/GitHub/Ghost_Reconciliation/scripts/cluster_sampler.R {params.n_samp}
 
             cd ..
 
@@ -112,14 +121,14 @@ rule stat_n_map:
                 sed 's/_events.tsv//g' > Transfers_sim.txt
 
 
-            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_sim.py
+            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/prediction_v2.py
 
         """
 
 rule aletree_rec:
     input:
         rules.simulation.output,
-        rules.stat_n_map.output.map_file,
+        rules.stat_n_map.output,
     output:
         aletree = "Extant_{extant}/sim_{sim}/aletree_Sample_Random",
     shell:

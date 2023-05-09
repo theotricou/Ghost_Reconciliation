@@ -28,7 +28,7 @@ which(spnd %in% tr$to) %in% which(list_color == "grey")
 
 list_color = rep("lightgrey", length(spnd))
 list_color[ll] <- "red"
-tr <- read.table("G/Gene_families/58_events.tsv", h = T)
+tr <- read.table("G/Gene_families/12_events.tsv", h = T)
 root_L = tree$root.edge
 end = tail(tr[, 1], 1)
 tr = tr[tr$EVENT == "T", ]
