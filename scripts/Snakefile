@@ -7,10 +7,9 @@ import random
 # extinction = 0
 extant_species = [200]
 sample_species = 40
-n_gene_tree = 20
-n_simulation = 8
-# transfer_rate = 0.025
-transfer_rate = 0.1
+n_gene_tree = 100
+n_simulation = 32
+transfer_rate = 0.025
 extinction_rate = 0
 workdir: "./"
 
@@ -27,8 +26,8 @@ rule all:
         """
     input:
         prediction = expand("Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Random_V2.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        aletree = expand("Extant_{extant}/sim_{sim}/aletree_Sample_Random", extant = extant_species, sim  = list(range(n_simulation))),
-        map_ale = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt", extant = extant_species, sim  = list(range(n_simulation))),
+        aletree = expand("Extant_{extant}/sim_{sim}/Sample_{sampling}/aletree", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
+        map_ale = expand("Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_{sampling}_ale.txt", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
         # map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
 
@@ -130,17 +129,23 @@ rule aletree_rec:
         rules.simulation.output,
         rules.stat_n_map.output,
     output:
-        aletree = "Extant_{extant}/sim_{sim}/aletree_Sample_Random",
+        aletreeC = "Extant_{extant}/sim_{sim}/Sample_Cluster/aletree",
+        aletreeR = "Extant_{extant}/sim_{sim}/Sample_Random/aletree",
+        aletreeD = "Extant_{extant}/sim_{sim}/Sample_Diversity/aletree",
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
             for i in Sample_*; do
-                ALEobserve $i/SampledSpeciesTree.nwk
-                ALEml_undated $i/SampledSpeciesTree.nwk $i/SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
-                mv *spTree aletree_$i
-                rm $i/SampledSpeciesTree.nwk.ale
+                cd $i
+                ALEobserve SampledSpeciesTree.nwk
+                ALEml_undated SampledSpeciesTree.nwk SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
+                mv *spTree aletree
+                rm SampledSpeciesTree.nwk.ale
+                rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.uTs
+                rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.uml_rec
+
+                cd ..
             done
-            rm *nwk.ale*
 
         """
 
@@ -148,80 +153,82 @@ rule rec_ale:
     input:
         rules.aletree_rec.output,
     output:
-        map_ale = "Extant_{extant}/sim_{sim}/Nodes_mapping_ale.txt",
+        map_aleC = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Cluster_ale.txt",
+        map_aleD = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Diversity_ale.txt",
+        map_aleR = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Random_ale.txt",
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-
-            for ale in SAMPLE_1/*_sampledtree.nwk; do
-                name=${{ale/SAMPLE_1\/}}
-                if [ ! -f aletree_$name.ale.uTs ]; then
-
+            for samp in Diversity Random Cluster; do
+                cd Sample_$samp
+                for ale in *sampledtree.nwk; do
                     ALEobserve $ale
                     ALEml_undated aletree $ale.ale
-                    sed -i 's/([^)]*)//g' aletree_$name.ale.uTs
-                    sed -i '1d' aletree_$name.ale.uTs
-                    rm $ale.ale
-
-                fi
-            done
-
-            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ale
-
-        """
-
-
-rule rec_ranger:
-    input:
-        rules.aletree_rec.output,
-    output:
-        map_ranger = "Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt",
-    # retries: 10
-    shell:
-        """
-            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-
-            for ranger in SAMPLE_1/*_sampledtree.nwk; do
-                name=${{ranger/SAMPLE_1\/}}
-                while [ ! -f aletree_$name.ranger.uTs ]; do
-
-                    cat aletree $ranger > ${{name}}_ranger_input
-                    ~/Downloads/9_Tools/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{name}}_ranger_input -o ${{name}}_ranger_output || true
-                    grep "Transfer," ${{name}}_ranger_output | awk '{{print $8, $11}}' | sed "s/,//g" | sed "s/$/ 1/g" > aletree_${{name}}.ranger.uTs || true
-                    rm ${{name}}_ranger_*
-
                 done
-            done
-
-            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ranger
-
-        """
-
-
-rule rec_notung:
-    input:
-        rules.aletree_rec.output,
-    output:
-        map_ranger = "Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt",
-    # retries: 10
-    shell:
-        """
-            cd Extant_{wildcards.extant}/sim_{wildcards.sim}
-
-            for notung in SAMPLE_1/*_sampledtree.nwk; do
-                name=${{notung/SAMPLE_1\/}}
-                while [ ! -f aletree_$name.notung.uTs ]; do
-
-                    java -jar ~/Downloads/9_Tools/Notung-2.9.1.5/Notung-2.9.1.5.jar --reconcile -g $notung -s aletree --bootstraps name --infertransfers true --multsols 1 --parsable || true
-                    grep "#T" ${{name}}.reconciled.0.parsable.txt | awk '{{print $4,$5}}' | grep -o "[0-9].*" | sed "s/$/ 1/g" > aletree_${{name}}.notung.uTs || true
-                    rm ${{name}}.reconciled*
-
+                for uts in *sampledtree.nwk.ale.uTs; do
+                    sed -i 's/([^)]*)//g' $uts
+                    sed -i '1d' $uts
+                    sed -i "s/^\t//g" $uts
                 done
+                python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ../Stats_reconciliation_Sample_$samp\_ale.txt
+                cd ..
             done
 
-            python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py notung
 
         """
+
+
+# rule rec_ranger:
+#     input:
+#         rules.aletree_rec.output,
+#     output:
+#         map_ranger = "Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt",
+#     # retries: 10
+#     shell:
+#         """
+#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+#
+#             for ranger in SAMPLE_1/*_sampledtree.nwk; do
+#                 name=${{ranger/SAMPLE_1\/}}
+#                 while [ ! -f aletree_$name.ranger.uTs ]; do
+#
+#                     cat aletree $ranger > ${{name}}_ranger_input
+#                     ~/Downloads/9_Tools/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{name}}_ranger_input -o ${{name}}_ranger_output || true
+#                     grep "Transfer," ${{name}}_ranger_output | awk '{{print $8, $11}}' | sed "s/,//g" | sed "s/$/ 1/g" > aletree_${{name}}.ranger.uTs || true
+#                     rm ${{name}}_ranger_*
+#
+#                 done
+#             done
+#
+#             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ranger
+#
+#         """
+#
+#
+# rule rec_notung:
+#     input:
+#         rules.aletree_rec.output,
+#     output:
+#         map_ranger = "Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt",
+#     # retries: 10
+#     shell:
+#         """
+#             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+#
+#             for notung in SAMPLE_1/*_sampledtree.nwk; do
+#                 name=${{notung/SAMPLE_1\/}}
+#                 while [ ! -f aletree_$name.notung.uTs ]; do
+#
+#                     java -jar ~/Downloads/9_Tools/Notung-2.9.1.5/Notung-2.9.1.5.jar --reconcile -g $notung -s aletree --bootstraps name --infertransfers true --multsols 1 --parsable || true
+#                     grep "#T" ${{name}}.reconciled.0.parsable.txt | awk '{{print $4,$5}}' | grep -o "[0-9].*" | sed "s/$/ 1/g" > aletree_${{name}}.notung.uTs || true
+#                     rm ${{name}}.reconciled*
+#
+#                 done
+#             done
+#
+#             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py notung
+#
+#         """
 
 
 # GNU Ghost
