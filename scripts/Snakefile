@@ -5,10 +5,12 @@ import os
 import random
 
 # extinction = 0
-extant_species = [200]
+extant_species = [100, 200]
 sample_species = 40
-n_gene_tree = 100
-n_simulation = 32
+
+n_simulation = 8
+n_gene_tree = 10
+
 transfer_rate = 0.025
 extinction_rate = 0
 workdir: "./"

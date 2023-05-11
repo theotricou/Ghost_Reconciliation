@@ -63,6 +63,72 @@ full_uTs["to_direct_descendant"] = full_uTs.apply(lambda x: is_to_strict_descend
 full_uTs["to_descendant"] = full_uTs.apply(lambda x: is_to_time_descendant(x[0], x[1], ale), axis = 1)
 res_df["to_direct_descendant"] = res_df.apply(lambda x: round(full_uTs.loc[(full_uTs[0] == x["ALE"]) & (full_uTs.to_direct_descendant)][2].sum(), 6), axis = 1)
 res_df["to_descendant"] = res_df.apply(lambda x: round(full_uTs.loc[(full_uTs[0] == x["ALE"]) & (full_uTs.to_descendant)][2].sum(), 6), axis = 1)
+
+
+def get_ghost_prediction(com_node, back_bone_nodes, bak_bone_tree):
+    # com_node = com.search_nodes(name = node.name)[0]
+    while com_node.name not in back_bone_nodes:
+        com_node = com_node.up
+    ext_node = bak_bone_tree.search_nodes(name = com_node.name)[0]
+    while len(ext_node.get_children()) not in [0,2]:
+        ext_node = ext_node.get_children()[0]
+    return(ext_node.name)
+
+def get_ghost_banch_length(node, nodes_contemporary, com):
+    if node.name in nodes_contemporary:
+        return(node.dist)
+    else:
+        dist_to_root = node.get_distance(com)
+        distup_to_root = node.up.get_distance(com)
+        if dist_to_root > extroot_to_comroot and distup_to_root > extroot_to_comroot:
+            ext_bl = round(node.dist, 6)
+        elif dist_to_root > extroot_to_comroot and distup_to_root < extroot_to_comroot:
+            ext_bl = round((dist_to_root - distup_to_root) - (extroot_to_comroot - distup_to_root), 6)
+        else:
+            ext_bl = 0
+        return(ext_bl)
+
+
+
+com = tr("../T/CompleteTree.nwk",format = 1)
+samp = tr("SampledSpeciesTree.nwk", format = 1)
+back_bone_nodes = []
+for i in samp:
+    node = com.search_nodes(name = i.name)[0]
+    while node:
+        back_bone_nodes.append(node.name)
+        node = node.up
+
+
+back_bone_nodes = list(set(back_bone_nodes))
+bak_bone_tree = com.copy()
+bak_bone_tree.prune(list(set(back_bone_nodes)))
+
+
+anc = com.search_nodes(name=samp.name)[0]
+extroot_to_comroot = anc.get_distance(com)
+nodes_contemporary = [node.name for node in anc.iter_descendants()]
+stat_by_node = dict()
+for i in com.traverse():
+    prediction = get_ghost_prediction(i, back_bone_nodes, bak_bone_tree)
+    if not i.is_root():
+        i.add_features(ghost_prediction = prediction, ghost_dist = get_ghost_banch_length(i, nodes_contemporary, com))
+    else:
+        i.add_features(ghost_prediction = prediction, ghost_dist = 0)
+    if prediction in stat_by_node:
+        if i.name not in bak_bone_tree:
+            stat_by_node[prediction][0] += 1
+            stat_by_node[prediction][1] += i.ghost_dist
+    else:
+        stat_by_node[prediction] = [0, 0]
+
+res_df["N_ghost_node"] = res_df.apply(lambda x: stat_by_node[x["Node"]][0], axis = 1)
+res_df["L_ghost_branch"] = res_df.apply(lambda x: round(stat_by_node[x["Node"]][1],6), axis = 1)
+
+
+
+
+
 res_df.to_csv(sys.argv[1], sep=' ', index = False)
 
 # GNU Ghost
