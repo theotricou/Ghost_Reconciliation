@@ -4,6 +4,10 @@
 library(ape)
 library(tidyr)
 library(phangorn)
+
+args <- commandArgs(TRUE)
+
+
 trcol <- function(col, alpha=1){
     if(missing(col))
         stop("Please provide a vector of colours.")
@@ -11,24 +15,25 @@ trcol <- function(col, alpha=1){
           function(x)
               rgb(x[1], x[2], x[3], alpha=alpha))}
 
-tree <- read.tree('T/CompleteTree.nwk')
 
-tree_samp <- read.tree('Sample_Cluster/SampledSpeciesTree.nwk')
+comp_tree <- args[1]
+samp_tree <- args[2]
+event <- args[3]
+
+X11()
+
+tree <- read.tree(comp_tree)
+
+tree_samp <- read.tree(samp_tree)
 spnd<-c(tree$tip.label, tree$node.label)
 
 ll = unique(unlist(sapply(tree_samp$tip.label, function(x){
   node = c(which(spnd == x), Ancestors(tree, which(spnd == x), type='all'))
   which(tree$edge[, 2] %in% node)
 })))
-
-
-which(spnd %in% tr$to) %in% which(list_color == "grey")
-
-
-
 list_color = rep("lightgrey", length(spnd))
 list_color[ll] <- "red"
-tr <- read.table("G/Gene_families/12_events.tsv", h = T)
+tr <- read.table(event, h = T)
 root_L = tree$root.edge
 end = tail(tr[, 1], 1)
 tr = tr[tr$EVENT == "T", ]
@@ -68,3 +73,5 @@ for (i in 1:nrow(tr)) {
 }
 arrows(as.numeric(mat[s,1]),as.numeric(mat[s,2]),as.numeric(mat[s,3]),as.numeric(mat[s,4]), col = mat[s,5],lwd=1.3, length = 0.1)
 tiplabels(tree$tip.label, adj = c(0, 0.5), srt=-90, bg = "white", frame = "none")
+
+locator(1)
