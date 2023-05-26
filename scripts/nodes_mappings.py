@@ -27,7 +27,7 @@ for i in ext:
 # Extant tree's nodes.
 dict_map = {}
 
-# Here, all extinct nodes that are deeper that the msa of all extant nodes,
+# Here, all extinct nodes that are deeper that the mca of all extant nodes,
 # if any, are added to the dictionary.
 cor_node = com.search_nodes(name=ext.name)[0]
 if ext.name != com.name:
@@ -40,7 +40,7 @@ if ext.name != com.name:
 else:
     dict_map[cor_node.name] = [cor_node.name, ext.name, ext.name]
 
-# Then node ancestors that are more shallow than the msa of all extant nodes.
+# Then node ancestors that are more shallow than the mca of all extant nodes.
 for i in ext.iter_descendants():
     cor_node = com.search_nodes(name=i.name)[0]
     dict_map[cor_node.name] = [cor_node.name, i.name, i.name]
