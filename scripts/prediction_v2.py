@@ -250,18 +250,27 @@ for dir in dirs:
     for gene in genes:
         print(gene)
         all_prediction.append(complete_prediction(gene, dir, back_bone_nodes, samp))
-    full_prediction = pd.concat(all_prediction, ignore_index=True)
-    full_prediction["to_direct_descendant"] = full_prediction.apply(lambda x: is_to_strict_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
-    full_prediction["to_descendant"] = full_prediction.apply(lambda x: is_to_time_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
+    try:
+        full_prediction = pd.concat(all_prediction, ignore_index=True)
+        full_prediction["to_direct_descendant"] = full_prediction.apply(lambda x: is_to_strict_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
+        full_prediction["to_descendant"] = full_prediction.apply(lambda x: is_to_time_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
+    except:
+        full_prediction = pd.DataFrame()
     samp.dist = 0
     res_df = pd.DataFrame()
     res_df["Node"] = [i.name for i in samp.traverse()]
     res_df["br_length"] = res_df.apply(lambda x: samp.search_nodes(name = x["Node"])[0].dist, axis = 1)
     res_df["dist_to_root"] = res_df.apply(lambda x: round(samp.search_nodes(name = x["Node"])[0].get_distance(samp),6), axis = 1)
-    res_df["N_transfers_donor"] = res_df.apply(lambda x: full_prediction.loc[full_prediction["from_prediction"] == x["Node"]].shape[0], axis = 1)
-    res_df["N_transfers_recip"] = res_df.apply(lambda x: full_prediction.loc[full_prediction["to_prediction"] == x["Node"]].shape[0], axis = 1)
-    res_df["to_direct_descendant"] = res_df.apply(lambda x: full_prediction.loc[(full_prediction.from_prediction == x["Node"]) & (full_prediction.to_direct_descendant)].shape[0], axis = 1)
-    res_df["to_descendant"] = res_df.apply(lambda x: full_prediction.loc[(full_prediction.from_prediction == x["Node"]) & (full_prediction.to_descendant)].shape[0], axis = 1)
+    if full_prediction.empty:
+        res_df["N_transfers_donor"] = 0
+        res_df["N_transfers_recip"] = 0
+        res_df["to_direct_descendant"] = 0
+        res_df["to_descendant"] = 0
+    else:
+        res_df["N_transfers_donor"] = res_df.apply(lambda x: full_prediction.loc[full_prediction["from_prediction"] == x["Node"]].shape[0], axis = 1)
+        res_df["N_transfers_recip"] = res_df.apply(lambda x: full_prediction.loc[full_prediction["to_prediction"] == x["Node"]].shape[0], axis = 1)
+        res_df["to_direct_descendant"] = res_df.apply(lambda x: full_prediction.loc[(full_prediction.from_prediction == x["Node"]) & (full_prediction.to_direct_descendant)].shape[0], axis = 1)
+        res_df["to_descendant"] = res_df.apply(lambda x: full_prediction.loc[(full_prediction.from_prediction == x["Node"]) & (full_prediction.to_descendant)].shape[0], axis = 1)
     anc = com.search_nodes(name=samp.name)[0]
     extroot_to_comroot = anc.get_distance(com)
     nodes_contemporary = [node.name for node in anc.iter_descendants()]

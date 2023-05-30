@@ -20,6 +20,8 @@ workdir: "./"
 # To run
 #
 # snakemake --snakefile ~/GitHub/Ghost_Reconciliation/scripts/Snakefile --cores 8 -n
+localrules: init_parameter
+
 
 rule all:
     message:
@@ -124,6 +126,8 @@ rule stat_n_map:
 
             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/prediction_v2.py
 
+            tar cf - G/ T/ --remove-files | bzip2 -9 - > sim_dir.tar.bz2
+            # extract with "tar -xf sim_dir.tar.bz2"
         """
 
 rule aletree_rec:

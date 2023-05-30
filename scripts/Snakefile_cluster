@@ -5,11 +5,11 @@ import os
 import random
 
 # extinction = 0
-extant_species = [200]
-sample_species = 40
+extant_species = [100]
+sample_species = 20
 
 n_simulation = 8
-n_gene_tree = 10
+n_gene_tree = 2
 
 transfer_rate = 0.025
 extinction_rate = 0
@@ -18,7 +18,15 @@ workdir: "./"
 
 # To run
 # remove "-n" to run proper simulations and not the dry run only
-# snakemake --snakefile /beegfs/home/tricou/GitHub/Ghost_Reconciliation/scripts/Snakefile --cores 8 --use-singularity -n
+# snakemake --snakefile /beegfs/home/tricou/GitHub/Ghost_Reconciliation/scripts/Snakefile --use-singularity --cores 16 -n
+cpu_thread = 8
+if workflow.cores > n_simulation:
+    cpu_thread = n_simulation
+else:
+    cpu_thread = workflow.cores
+
+
+localrules: init_parameter,
 
 rule all:
     message:
@@ -27,9 +35,9 @@ rule all:
         """
     input:
         prediction = expand("Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Random_V2.txt", extant = extant_species, sim  = list(range(n_simulation))),
-        aletree = expand("Extant_{extant}/sim_{sim}/Sample_{sampling}/aletree", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
-        rec_ranger = expand("Extant_{extant}/sim_{sim}/Sample_Diversity/log_ranger", extant = extant_species, sim  = list(range(n_simulation))),
-        map_ale = expand("Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_{sampling}_ale.txt", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
+        #aletree = expand("Extant_{extant}/sim_{sim}/Sample_{sampling}/aletree", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
+        #rec_ranger = expand("Extant_{extant}/sim_{sim}/Sample_Diversity/log_ranger", extant = extant_species, sim  = list(range(n_simulation))),
+        #map_ale = expand("Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_{sampling}_ale.txt", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
         # map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
 
@@ -74,7 +82,7 @@ rule simulation:
         n_sim = n_simulation,
         seed = lambda w: seeder[w.extant],
         n_samp = sample_species,
-    threads: 8
+    threads: cpu_thread
     shell:
         """
             python3 /beegfs/home/tricou/GitHub/Zombi_Horde/Zombi.py T {input.Spe} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
@@ -124,6 +132,8 @@ rule stat_n_map:
 
 
             python3 /beegfs/home/tricou/GitHub/Ghost_Reconciliation/scripts/prediction_v2.py
+            tar cf - G/ T/ --remove-files | bzip2 -9 - > sim_dir.tar.bz2
+            # extract with "tar -xf sim_dir.tar.bz2"
 
         """
 
@@ -197,6 +207,9 @@ rule rec_ale_n_map:
                    python3 /beegfs/home/tricou/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ../Stats_reconciliation_Sample_$samp\_ale.txt
 
                 cd ..
+            	tar cf - Sample_$samp --remove-files | bzip2 -9 - > Sample_$samp\.tar.bz2
+           	# extract with "tar -xf sim_dir.tar.bz2"
+                #zip -q -rm Sample_$samp.zip Sample_$samp
             done
         """
 
@@ -214,13 +227,13 @@ cd Extant_{wildcards.extant}/sim_{wildcards.sim}
 for samp in Diversity Random Cluster; do
 cd Sample_$samp
 for ranger in *sampledtree.nwk; do
-mkdir ${{ranger}}_ranger_out_dir
+mkdir -p ${{ranger}}_ranger_out_dir
 cat aletree $ranger > ${{ranger}}_ranger_out_dir/${{ranger}}_ranger_input
 cd ${{ranger}}_ranger_out_dir
-for i in `seq 1 500`; do
+for i in `seq 1 100`; do
 /beegfs/home/tricou/soft/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{ranger}}_ranger_input -o ${{ranger}}_ranger_output_$i || true
 done
-grep -h ransfer, ${{ranger}}_ranger_output_* | sort | uniq  -c | awk '{{print $9, $12, ($1/500)}}' | sed "s/\,//g" >> ../aletree_${{ranger}}.ranger.uTs || true
+grep -h ransfer, ${{ranger}}_ranger_output_* | sort | uniq  -c | awk '{{print $9, $12, ($1/100)}}' | sed "s/\,//g" >> ../aletree_${{ranger}}.ranger.uTs || true
 cd ..
 done
 touch log_ranger
@@ -228,10 +241,6 @@ cd ..
 done
         """
 
-
-
-            cd Extant_200/sim_3
-            for samp in Diversity Random Cluster; do cd Sample_$samp; echo log_ranger; cd ..; done
 
 
 #
