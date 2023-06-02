@@ -132,7 +132,7 @@ rule stat_n_map:
 
 
             python3 /beegfs/home/tricou/GitHub/Ghost_Reconciliation/scripts/prediction_v2.py
-            tar cf - G/ T/ --remove-files | bzip2 -9 - > sim_dir.tar.bz2
+            # tar cf - G/ T/ --remove-files | bzip2 -9 - > sim_dir.tar.bz2
             # extract with "tar -xf sim_dir.tar.bz2"
 
         """
@@ -207,7 +207,7 @@ rule rec_ale_n_map:
                    python3 /beegfs/home/tricou/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ../Stats_reconciliation_Sample_$samp\_ale.txt
 
                 cd ..
-            	tar cf - Sample_$samp --remove-files | bzip2 -9 - > Sample_$samp\.tar.bz2
+            	# tar cf - Sample_$samp --remove-files | bzip2 -9 - > Sample_$samp\.tar.bz2
            	# extract with "tar -xf sim_dir.tar.bz2"
                 #zip -q -rm Sample_$samp.zip Sample_$samp
             done

@@ -5,23 +5,28 @@ import os
 import random
 
 # extinction = 0
-extant_species = [100, 200]
+extant_species = [200]
 sample_species = 40
 
-n_simulation = 8
-n_gene_tree = 10
+n_simulation = 1000
+n_gene_tree = 1000
 
 transfer_rate = 0.025
 extinction_rate = 0
 workdir: "./"
 
 
-
 # To run
-#
-# snakemake --snakefile ~/GitHub/Ghost_Reconciliation/scripts/Snakefile --cores 8 -n
-localrules: init_parameter
+# remove "-n" to run proper simulations and not the dry run only
+# snakemake --snakefile /home/theo/GitHub/Ghost_Reconciliation/scripts/Snakefile --use-singularity --cores 16 -n
+cpu_thread = 8
+if workflow.cores > n_simulation:
+    cpu_thread = n_simulation
+else:
+    cpu_thread = workflow.cores
 
+
+localrules: init_parameter,
 
 rule all:
     message:
@@ -31,7 +36,8 @@ rule all:
     input:
         prediction = expand("Extant_{extant}/sim_{sim}/Stats_simulation_Sample_Random_V2.txt", extant = extant_species, sim  = list(range(n_simulation))),
         aletree = expand("Extant_{extant}/sim_{sim}/Sample_{sampling}/aletree", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
-        map_ale = expand("Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_{sampling}_ale.txt", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
+        #rec_ranger = expand("Extant_{extant}/sim_{sim}/Sample_Diversity/log_ranger", extant = extant_species, sim  = list(range(n_simulation))),
+        #map_ale = expand("Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_{sampling}_ale.txt", extant = extant_species, sim  = list(range(n_simulation)), sampling = ["Random", "Diversity", "Cluster"]),
         # map_ranger = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_ranger.txt", extant = extant_species, sim  = list(range(n_simulation))),
         # map_notung = expand("Extant_{extant}/sim_{sim}/Nodes_mapping_notung.txt", extant = extant_species, sim  = list(range(n_simulation))),
 
@@ -76,14 +82,14 @@ rule simulation:
         n_sim = n_simulation,
         seed = lambda w: seeder[w.extant],
         n_samp = sample_species,
-    threads: 8
+    threads: cpu_thread
     shell:
         """
-            python3 ~/GitHub/Zombi_Horde/Zombi.py T {input.Spe} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 /home/theo/GitHub/Zombi_Horde/Zombi.py T {input.Spe} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
-            python3 ~/GitHub/Zombi_Horde/Zombi.py Gm {input.Gen} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 /home/theo/GitHub/Zombi_Horde/Zombi.py Gm {input.Gen} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
-            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py n {params.n_samp} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
+            python3 /home/theo/GitHub/Zombi_Horde/SpeciesSampler.py n {params.n_samp} Extant_{wildcards.extant}/sim_ {params.n_sim} {params.seed} {threads}
 
             touch Extant_{wildcards.extant}/{params.seed}
         """
@@ -103,19 +109,20 @@ rule stat_n_map:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
 
+            mv SAMPLE_1/ Sample_Random
+
             python3 /home/theo/GitHub/Treemmer/Treemmer_v0.3.py T/ExtantTree.nwk -X {params.n_samp} -v 0
             cp T/ExtantTree.nwk_trimmed_list_X* diversity_sample
-            mv SAMPLE_1/ Sample_Random
+
             Rscript /home/theo/GitHub/Ghost_Reconciliation/scripts/cluster_sampler.R {params.n_samp}
 
             cd ..
 
-            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py i sim_{wildcards.sim}/diversity_sample sim_{wildcards.sim} 0 666 1
+            python3 /home/theo/GitHub/Zombi_Horde/SpeciesSampler.py i sim_{wildcards.sim}/diversity_sample sim_{wildcards.sim} 0 666 1
             mv sim_{wildcards.sim}/SAMPLE_1/ sim_{wildcards.sim}/Sample_Diversity
 
-            python3 ~/GitHub/Zombi_Horde/SpeciesSampler.py i sim_{wildcards.sim}/cluster_sample sim_{wildcards.sim} 0 666 1
+            python3 /home/theo/GitHub/Zombi_Horde/SpeciesSampler.py i sim_{wildcards.sim}/cluster_sample sim_{wildcards.sim} 0 666 1
             mv sim_{wildcards.sim}/SAMPLE_1/ sim_{wildcards.sim}/Sample_Cluster
-
 
             cd sim_{wildcards.sim}
 
@@ -125,9 +132,9 @@ rule stat_n_map:
 
 
             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/prediction_v2.py
-
-            tar cf - G/ T/ --remove-files | bzip2 -9 - > sim_dir.tar.bz2
+            # tar cf - G/ T/ --remove-files | bzip2 -9 - > sim_dir.tar.bz2
             # extract with "tar -xf sim_dir.tar.bz2"
+
         """
 
 rule aletree_rec:
@@ -143,13 +150,12 @@ rule aletree_rec:
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
             for i in Sample_*; do
                 cd $i
-                ALEobserve SampledSpeciesTree.nwk
-                ALEml_undated SampledSpeciesTree.nwk SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
-                mv *spTree aletree
-                rm SampledSpeciesTree.nwk.ale
-                rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.uTs
-                rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.uml_rec
-
+                    ALEobserve SampledSpeciesTree.nwk
+                    ALEml_undated SampledSpeciesTree.nwk SampledSpeciesTree.nwk.ale output_species_tree=y sample=0
+                    cp *spTree aletree
+                #rm SampledSpeciesTree.nwk.ale
+                #rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.uTs
+                #rm SampledSpeciesTree.nwk_SampledSpeciesTree.nwk.ale.uml_rec
                 cd ..
             done
 
@@ -159,9 +165,9 @@ rule rec_ale:
     input:
         rules.aletree_rec.output,
     output:
-        map_aleC = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Cluster_ale.txt",
-        map_aleD = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Diversity_ale.txt",
-        map_aleR = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Random_ale.txt",
+        map_aleC = "Extant_{extant}/sim_{sim}/Sample_Cluster/log_ale",
+        map_aleD = "Extant_{extant}/sim_{sim}/Sample_Random/log_ale",
+        map_aleR = "Extant_{extant}/sim_{sim}/Sample_Diversity/log_ale",
     shell:
         """
             cd Extant_{wildcards.extant}/sim_{wildcards.sim}
@@ -176,14 +182,64 @@ rule rec_ale:
                     sed -i '1d' $uts
                     sed -i "s/^\t//g" $uts
                 done
-                python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ../Stats_reconciliation_Sample_$samp\_ale.txt
+		        touch log_ale
                 cd ..
             done
-
-
         """
 
 
+rule rec_ale_n_map:
+    input:
+        rules.rec_ale.output,
+    output:
+        map_aleC = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Cluster_ale.txt",
+        map_aleD = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Diversity_ale.txt",
+        map_aleR = "Extant_{extant}/sim_{sim}/Stats_reconciliation_Sample_Random_ale.txt",
+    shell:
+        """
+         cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+            for samp in Diversity Random Cluster; do
+                cd Sample_$samp
+                   python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ../Stats_reconciliation_Sample_$samp\_ale.txt
+
+                cd ..
+            	# tar cf - Sample_$samp --remove-files | bzip2 -9 - > Sample_$samp\.tar.bz2
+           	# extract with "tar -xf sim_dir.tar.bz2"
+                #zip -q -rm Sample_$samp.zip Sample_$samp
+            done
+        """
+
+
+rule rec_ranger:
+    input:
+        rules.aletree_rec.output,
+    output:
+        map_aleC = "Extant_{extant}/sim_{sim}/Sample_Cluster/log_ranger",
+        map_aleD = "Extant_{extant}/sim_{sim}/Sample_Random/log_ranger",
+        map_aleR = "Extant_{extant}/sim_{sim}/Sample_Diversity/log_ranger",
+    shell:
+        """
+cd Extant_{wildcards.extant}/sim_{wildcards.sim}
+for samp in Diversity Random Cluster; do
+cd Sample_$samp
+for ranger in *sampledtree.nwk; do
+mkdir -p ${{ranger}}_ranger_out_dir
+cat aletree $ranger > ${{ranger}}_ranger_out_dir/${{ranger}}_ranger_input
+cd ${{ranger}}_ranger_out_dir
+for i in `seq 1 100`; do
+/beegfs/home/tricou/soft/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{ranger}}_ranger_input -o ${{ranger}}_ranger_output_$i || true
+done
+grep -h ransfer, ${{ranger}}_ranger_output_* | sort | uniq  -c | awk '{{print $9, $12, ($1/100)}}' | sed "s/\,//g" >> ../aletree_${{ranger}}.ranger.uTs || true
+cd ..
+done
+touch log_ranger
+cd ..
+done
+        """
+
+
+
+#
 # rule rec_ranger:
 #     input:
 #         rules.aletree_rec.output,
@@ -199,17 +255,17 @@ rule rec_ale:
 #                 while [ ! -f aletree_$name.ranger.uTs ]; do
 #
 #                     cat aletree $ranger > ${{name}}_ranger_input
-#                     ~/Downloads/9_Tools/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{name}}_ranger_input -o ${{name}}_ranger_output || true
+#                     /beegfs/home/tricou/soft/RANGER-DTL/CorePrograms/Ranger-DTL.linux -i ${{name}}_ranger_input -o ${{name}}_ranger_output || true
 #                     grep "Transfer," ${{name}}_ranger_output | awk '{{print $8, $11}}' | sed "s/,//g" | sed "s/$/ 1/g" > aletree_${{name}}.ranger.uTs || true
 #                     rm ${{name}}_ranger_*
 #
 #                 done
 #             done
 #
-#             python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ranger
+#             # python3 /home/theo/GitHub/Ghost_Reconciliation/scripts/nodes_mappings_rec.py ranger
+#             touche Nodes_mapping_ranger.txt
 #
 #         """
-#
 #
 # rule rec_notung:
 #     input:

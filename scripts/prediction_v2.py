@@ -27,10 +27,13 @@ def are_they_sisters(to_name, from_name, tree):
     # print(from_name)
     to_node = tree.search_nodes(name = to_name)[0]
     from_node = tree.search_nodes(name = from_name)[0]
-    if to_node.get_sisters()[0] == from_node:
+    if to_node.is_root():
         return(False)
     else:
-        return(True)
+        if to_node.get_sisters()[0] == from_node:
+            return(False)
+        else:
+            return(True)
 
 def get_prediction_R(dd, detach_tree, tr_prediction, samp):
     # print(dd["to"] + "_" + dd["to_id"])
@@ -56,6 +59,8 @@ def get_prediction_R(dd, detach_tree, tr_prediction, samp):
         #     if i.name.split("_")[0] in node_samp and i.name not in list_recip:
         #         R_node = i
         #         break
+        if R_node.name.split("_")[0] == dd["to"] and R_node.name.split("_")[1] > dd["to_id"]:
+            R_node = detach_tree.search_nodes(name = dd["to"] + "_" + dd["to_id"])[0]
         return(R_node.name.split("_"))
     except IndexError:
         return(["TO_REMOVE", "TO_REMOVE"])
@@ -82,14 +87,16 @@ def get_prediction_D(dd, detach_tree, tr_prediction, samp, speciation):
         D_node = detach_tree.search_nodes(name = R_node.name)[0]
         list_recip = list(tr_prediction[tr_prediction["TIME"] >= dd["TIME"]]["to_prediction"] + "_" + tr_prediction[tr_prediction["TIME"] >= dd["TIME"]]["to_prediction_id"])
         list_recip_all = list(tr_prediction["to_prediction"] + "_" + tr_prediction["to_prediction_id"])
-        while len(D_node.get_sisters()) != 1:
-            D_node = D_node.up
-        D_node = D_node.get_sisters()[0]
         Root_nodes = []
         root_node = detach_tree.get_common_ancestor(detach_tree.get_leaf_names())
         while root_node:
             Root_nodes.append(root_node.name)
             root_node = root_node.up
+        if D_node.name in Root_nodes:
+            return(["TO_REMOVE", "TO_REMOVE"])
+        while len(D_node.get_sisters()) != 1:
+            D_node = D_node.up
+        D_node = D_node.get_sisters()[0]
         if D_node.up.name not in Root_nodes:
             leaf_in_D_node = D_node.get_leaf_names()
             nodes_recip = [i for i in D_node.traverse() if i.name in make_list(D_node, speciation, tr_prediction)]
@@ -97,7 +104,9 @@ def get_prediction_D(dd, detach_tree, tr_prediction, samp, speciation):
             for i in nodes_recip:
                 for l in i:
                     leaves_in_nodes_recip.append(l.name)
+            count = 0
             while set(leaf_in_D_node) == set(leaves_in_nodes_recip) and D_node.name not in Root_nodes:
+                count += 1
                 if D_node.up.name in Root_nodes:
                     D_node = D_node.get_sisters()[0]
                     while len(D_node.get_children()) not in [0,2]:
@@ -162,6 +171,11 @@ def complete_prediction(gene, dir, back_bone_nodes, samp):
     for index, row in tr_prediction.sort_values('TIME', ascending=False).iterrows():
         tr_prediction.loc[index, ["to_prediction", "to_prediction_id"]] = get_prediction_R(row, detach_tree, tr_prediction, samp)
     # tr_prediction[["to_prediction", "to_prediction_id"]] = tr_prediction.apply(lambda x: pd.Series(get_prediction_R(x, detach_tree, tr_prediction, samp)), axis = 1)
+    DandR = ["None", "None"]
+    for index, row in tr_prediction.iterrows():
+        if set(tr_prediction.loc[index, ["from", "to"]]) == set(DandR):
+            tr_prediction.loc[index, ["to_prediction"]] = "TO_REMOVE"
+        DandR = list(tr_prediction.loc[index, ["from", "to"]])
     tr_prediction = tr_prediction[tr_prediction.to_prediction != "TO_REMOVE"]
     if tr_prediction.empty:
         return
@@ -248,8 +262,10 @@ for dir in dirs:
     genes = glob.glob(dir + "/*_sampledtree.nwk")
     all_prediction = []
     for gene in genes:
-        print(gene)
-        all_prediction.append(complete_prediction(gene, dir, back_bone_nodes, samp))
+        try:
+            all_prediction.append(complete_prediction(gene, dir, back_bone_nodes, samp))
+        except:
+            print(os.getcwd() + "/" + gene)
     try:
         full_prediction = pd.concat(all_prediction, ignore_index=True)
         full_prediction["to_direct_descendant"] = full_prediction.apply(lambda x: is_to_strict_descendant(x["from_prediction"], x["to_prediction"], samp), axis = 1)
